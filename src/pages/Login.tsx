@@ -55,8 +55,8 @@ const Login = () => {
           </form>
           <div className="mt-6 p-3 rounded-lg bg-muted text-xs text-muted-foreground space-y-1">
             <p className="font-medium">Demo Credentials:</p>
-            <p>Admin: <code className="text-foreground">admin / admin123</code></p>
-            <p>Counter: <code className="text-foreground">counter / counter123</code></p>
+            <p>Admin — Username: <code className="text-foreground">admin</code> · Password: <code className="text-foreground">admin123</code></p>
+            <p>Counter — Username: <code className="text-foreground">counter</code> · Password: <code className="text-foreground">counter123</code></p>
           </div>
         </CardContent>
       </Card>
