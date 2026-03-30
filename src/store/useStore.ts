@@ -30,6 +30,7 @@ interface AppState {
   addMaterial: (m: Omit<RawMaterial, 'id'>) => void;
   updateMaterial: (id: string, m: Partial<RawMaterial>) => void;
   deleteMaterial: (id: string) => void;
+  restockMaterial: (id: string, qty: number) => void;
 
   // Menu
   menuItems: MenuItem[];
@@ -123,6 +124,17 @@ export const useStore = create<AppState>()(
           materials: s.materials.filter(x => x.id !== id),
           inventoryLogs: [
             { id: genLogId(), action: 'deleted' as const, materialName: existing?.name || 'Unknown', details: 'Material removed from inventory', timestamp: new Date() },
+            ...s.inventoryLogs,
+          ],
+        };
+      }),
+      restockMaterial: (id, qty) => set(s => {
+        const existing = s.materials.find(x => x.id === id);
+        if (!existing) return s;
+        return {
+          materials: s.materials.map(x => x.id === id ? { ...x, currentStock: x.currentStock + qty } : x),
+          inventoryLogs: [
+            { id: genLogId(), action: 'restocked' as const, materialName: existing.name, details: `Restocked +${qty} ${existing.unit} (was ${existing.currentStock}, now ${existing.currentStock + qty})`, timestamp: new Date() },
             ...s.inventoryLogs,
           ],
         };
