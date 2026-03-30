@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, ChefHat, LogOut, Monitor } from 'lucide-react';
+import { LayoutDashboard, Package, ChefHat, LogOut, Monitor, History } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useStore } from '@/store/useStore';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +20,7 @@ const navItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
   { title: 'Inventory', url: '/inventory', icon: Package },
   { title: 'Menu', url: '/menu', icon: ChefHat },
+  { title: 'History', url: '/history', icon: History },
   { title: 'POS', url: '/pos', icon: Monitor },
 ];
 

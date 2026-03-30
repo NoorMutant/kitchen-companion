@@ -9,6 +9,16 @@ export interface StockShortage {
   unit: string;
 }
 
+export type InventoryLogAction = 'added' | 'edited' | 'deleted' | 'restocked' | 'deducted';
+
+export interface InventoryLog {
+  id: string;
+  action: InventoryLogAction;
+  materialName: string;
+  details: string;
+  timestamp: Date;
+}
+
 interface AppState {
   // Auth
   user: User | null;
@@ -38,6 +48,9 @@ interface AppState {
   orders: Order[];
   checkStock: () => StockShortage[];
   completeOrder: (force?: boolean) => Order | null;
+
+  // History / Logs
+  inventoryLogs: InventoryLog[];
 }
 
 const TAX_RATE = 0.05;
@@ -71,6 +84,8 @@ const USERS: { username: string; password: string; user: User }[] = [
 
 let idCounter = 100;
 const genId = () => String(++idCounter);
+let logCounter = 0;
+const genLogId = () => `log-${++logCounter}`;
 
 export const useStore = create<AppState>()(
   persist(
@@ -84,9 +99,34 @@ export const useStore = create<AppState>()(
       logout: () => set({ user: null, cart: [] }),
 
       materials: defaultMaterials,
-      addMaterial: (m) => set(s => ({ materials: [...s.materials, { ...m, id: genId() }] })),
-      updateMaterial: (id, m) => set(s => ({ materials: s.materials.map(x => x.id === id ? { ...x, ...m } : x) })),
-      deleteMaterial: (id) => set(s => ({ materials: s.materials.filter(x => x.id !== id) })),
+      addMaterial: (m) => set(s => ({
+        materials: [...s.materials, { ...m, id: genId() }],
+        inventoryLogs: [
+          { id: genLogId(), action: 'added' as const, materialName: m.name, details: `New material added: ${m.currentStock} ${m.unit}`, timestamp: new Date() },
+          ...s.inventoryLogs,
+        ],
+      })),
+      updateMaterial: (id, m) => set(s => {
+        const existing = s.materials.find(x => x.id === id);
+        const changes = Object.entries(m).map(([k, v]) => `${k}: ${v}`).join(', ');
+        return {
+          materials: s.materials.map(x => x.id === id ? { ...x, ...m } : x),
+          inventoryLogs: [
+            { id: genLogId(), action: 'edited' as const, materialName: existing?.name || 'Unknown', details: `Updated: ${changes}`, timestamp: new Date() },
+            ...s.inventoryLogs,
+          ],
+        };
+      }),
+      deleteMaterial: (id) => set(s => {
+        const existing = s.materials.find(x => x.id === id);
+        return {
+          materials: s.materials.filter(x => x.id !== id),
+          inventoryLogs: [
+            { id: genLogId(), action: 'deleted' as const, materialName: existing?.name || 'Unknown', details: 'Material removed from inventory', timestamp: new Date() },
+            ...s.inventoryLogs,
+          ],
+        };
+      }),
 
       menuItems: defaultMenuItems,
       addMenuItem: (m) => set(s => ({ menuItems: [...s.menuItems, { ...m, id: genId() }] })),
@@ -146,18 +186,34 @@ export const useStore = create<AppState>()(
 
         // Deduct inventory (can go negative if forced)
         const updatedMaterials = [...materials];
+        const deductionLogs: InventoryLog[] = [];
         for (const cartItem of cart) {
           for (const ingredient of cartItem.menuItem.recipe) {
             const mat = updatedMaterials.find(m => m.id === ingredient.materialId);
             if (mat) {
-              mat.currentStock = mat.currentStock - ingredient.quantity * cartItem.quantity;
+              const deducted = ingredient.quantity * cartItem.quantity;
+              mat.currentStock = mat.currentStock - deducted;
+              deductionLogs.push({
+                id: genLogId(),
+                action: 'deducted',
+                materialName: mat.name,
+                details: `Deducted ${deducted.toFixed(2)} ${mat.unit} for order ${order.id} (${cartItem.menuItem.name} x${cartItem.quantity})`,
+                timestamp: new Date(),
+              });
             }
           }
         }
 
-        set(s => ({ orders: [order, ...s.orders], cart: [], materials: updatedMaterials }));
+        set(s => ({
+          orders: [order, ...s.orders],
+          cart: [],
+          materials: updatedMaterials,
+          inventoryLogs: [...deductionLogs, ...s.inventoryLogs],
+        }));
         return order;
       },
+
+      inventoryLogs: [],
     }),
     { name: 'restaurant-pos-store' }
   )
