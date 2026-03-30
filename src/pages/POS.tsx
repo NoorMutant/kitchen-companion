@@ -1,20 +1,32 @@
 import { useState } from 'react';
-import { useStore } from '@/store/useStore';
+import { useStore, StockShortage } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Minus, Plus, Trash2, ShoppingCart, LogOut } from 'lucide-react';
+import { Minus, Plus, Trash2, ShoppingCart, LogOut, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import ReceiptModal from '@/components/ReceiptModal';
 import { Order, MenuItem } from '@/types';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const CATEGORIES = ['All', 'Mains', 'Sides', 'Drinks', 'Desserts'] as const;
 
 const POS = () => {
-  const { menuItems, cart, addToCart, updateCartQty, removeFromCart, completeOrder, logout, user, materials } = useStore();
+  const { menuItems, cart, addToCart, updateCartQty, removeFromCart, completeOrder, checkStock, logout, user } = useStore();
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
+  const [shortages, setShortages] = useState<StockShortage[]>([]);
+  const [showShortageDialog, setShowShortageDialog] = useState(false);
   const navigate = useNavigate();
 
   const filtered = activeCategory === 'All' ? menuItems : menuItems.filter(m => m.category === activeCategory);
@@ -23,15 +35,29 @@ const POS = () => {
   const total = subtotal + tax;
 
   const handleComplete = () => {
-    const order = completeOrder();
+    const stockShortages = checkStock();
+    if (stockShortages.length > 0) {
+      setShortages(stockShortages);
+      setShowShortageDialog(true);
+      return;
+    }
+    finalizeOrder(false);
+  };
+
+  const finalizeOrder = (force: boolean) => {
+    const order = completeOrder(force);
     if (order) {
       toast.success('Order completed!');
-      // Check low stock after order
       const updatedMaterials = useStore.getState().materials;
       const lowStock = updatedMaterials.filter(m => m.currentStock <= m.reorderLevel);
-      lowStock.forEach(m => toast.warning(`Warning: ${m.name} stock is low (${m.currentStock} ${m.unit})`));
+      lowStock.forEach(m => toast.warning(`Warning: ${m.name} stock is low (${m.currentStock.toFixed(2)} ${m.unit})`));
       setReceiptOrder(order);
     }
+  };
+
+  const handleForceOrder = () => {
+    setShowShortageDialog(false);
+    finalizeOrder(true);
   };
 
   const handleLogout = () => { logout(); navigate('/'); };
@@ -56,7 +82,6 @@ const POS = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Menu Grid */}
         <div className="flex-1 flex flex-col p-4 overflow-hidden">
-          {/* Category Tabs */}
           <div className="flex gap-2 mb-4 flex-wrap">
             {CATEGORIES.map(cat => (
               <Button
@@ -70,7 +95,6 @@ const POS = () => {
             ))}
           </div>
 
-          {/* Items Grid */}
           <ScrollArea className="flex-1">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {filtered.map(item => (
@@ -153,6 +177,40 @@ const POS = () => {
       </div>
 
       <ReceiptModal order={receiptOrder} open={!!receiptOrder} onClose={() => setReceiptOrder(null)} />
+
+      {/* Stock Shortage Dialog */}
+      <AlertDialog open={showShortageDialog} onOpenChange={setShowShortageDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Insufficient Stock
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p className="mb-3">The following ingredients don't have enough stock for this order:</p>
+                <div className="space-y-2 rounded-md border p-3 bg-muted/50">
+                  {shortages.map((s, i) => (
+                    <div key={i} className="flex justify-between text-sm">
+                      <span className="font-medium text-foreground">{s.materialName}</span>
+                      <span className="text-destructive">
+                        Need {s.required} {s.unit} — Only {s.available} {s.unit} available
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm">Proceed anyway? Stock will go into <span className="font-semibold text-destructive">negative</span>.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleForceOrder} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Proceed Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
