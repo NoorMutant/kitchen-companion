@@ -4,21 +4,22 @@ import { RawMaterial } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, PackagePlus } from 'lucide-react';
 import { toast } from 'sonner';
 
 const emptyForm = { name: '', unit: 'kg' as RawMaterial['unit'], currentStock: 0, reorderLevel: 0 };
 
 const Inventory = () => {
-  const { materials, addMaterial, updateMaterial, deleteMaterial } = useStore();
+  const { materials, addMaterial, updateMaterial, deleteMaterial, restockMaterial } = useStore();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [restockAmounts, setRestockAmounts] = useState<Record<string, string>>({});
 
   const openNew = () => { setEditing(null); setForm(emptyForm); setOpen(true); };
   const openEdit = (m: RawMaterial) => { setEditing(m.id); setForm({ name: m.name, unit: m.unit, currentStock: m.currentStock, reorderLevel: m.reorderLevel }); setOpen(true); };
@@ -40,6 +41,14 @@ const Inventory = () => {
     toast.success(`${name} deleted`);
   };
 
+  const handleRestock = (id: string, name: string, unit: string) => {
+    const qty = parseFloat(restockAmounts[id] || '0');
+    if (qty <= 0) { toast.error('Enter a valid quantity'); return; }
+    restockMaterial(id, qty);
+    toast.success(`Restocked ${qty} ${unit} of ${name}`);
+    setRestockAmounts(prev => ({ ...prev, [id]: '' }));
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -57,6 +66,7 @@ const Inventory = () => {
                 <TableHead>Stock</TableHead>
                 <TableHead>Reorder Level</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Restock</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -65,14 +75,40 @@ const Inventory = () => {
                 <TableRow key={m.id}>
                   <TableCell className="font-medium">{m.name}</TableCell>
                   <TableCell>{m.unit}</TableCell>
-                  <TableCell>{m.currentStock}</TableCell>
+                  <TableCell className={m.currentStock < 0 ? 'text-destructive font-bold' : ''}>
+                    {parseFloat(m.currentStock.toFixed(2))}
+                  </TableCell>
                   <TableCell>{m.reorderLevel}</TableCell>
                   <TableCell>
-                    {m.currentStock <= m.reorderLevel ? (
+                    {m.currentStock < 0 ? (
+                      <Badge variant="destructive">Negative</Badge>
+                    ) : m.currentStock <= m.reorderLevel ? (
                       <Badge variant="destructive">Low Stock</Badge>
                     ) : (
                       <Badge variant="secondary">In Stock</Badge>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="Qty"
+                        className="w-20 h-8 text-sm"
+                        value={restockAmounts[m.id] || ''}
+                        onChange={e => setRestockAmounts(prev => ({ ...prev, [m.id]: e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter') handleRestock(m.id, m.name, m.unit); }}
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => handleRestock(m.id, m.name, m.unit)}
+                        title="Restock"
+                      >
+                        <PackagePlus className="h-4 w-4 text-emerald-600" />
+                      </Button>
+                    </div>
                   </TableCell>
                   <TableCell className="text-right space-x-1">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(m)}><Pencil className="h-4 w-4" /></Button>
