@@ -2,6 +2,13 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { RawMaterial, MenuItem, CartItem, Order, User } from '@/types';
 
+export interface StockShortage {
+  materialName: string;
+  required: number;
+  available: number;
+  unit: string;
+}
+
 interface AppState {
   // Auth
   user: User | null;
@@ -29,7 +36,8 @@ interface AppState {
 
   // Orders
   orders: Order[];
-  completeOrder: () => Order | null;
+  checkStock: () => StockShortage[];
+  completeOrder: (force?: boolean) => Order | null;
 }
 
 const TAX_RATE = 0.05;
@@ -99,9 +107,31 @@ export const useStore = create<AppState>()(
       clearCart: () => set({ cart: [] }),
 
       orders: [],
-      completeOrder: () => {
+      checkStock: () => {
         const { cart, materials } = get();
+        const needed: Record<string, number> = {};
+        for (const cartItem of cart) {
+          for (const ingredient of cartItem.menuItem.recipe) {
+            needed[ingredient.materialId] = (needed[ingredient.materialId] || 0) + ingredient.quantity * cartItem.quantity;
+          }
+        }
+        const shortages: StockShortage[] = [];
+        for (const [matId, qty] of Object.entries(needed)) {
+          const mat = materials.find(m => m.id === matId);
+          if (mat && mat.currentStock < qty) {
+            shortages.push({ materialName: mat.name, required: parseFloat(qty.toFixed(2)), available: parseFloat(mat.currentStock.toFixed(2)), unit: mat.unit });
+          }
+        }
+        return shortages;
+      },
+      completeOrder: (force = false) => {
+        const { cart, materials, checkStock } = get();
         if (cart.length === 0) return null;
+
+        if (!force) {
+          const shortages = checkStock();
+          if (shortages.length > 0) return null;
+        }
 
         const subtotal = cart.reduce((sum, c) => sum + c.menuItem.price * c.quantity, 0);
         const tax = Math.round(subtotal * TAX_RATE);
@@ -114,13 +144,13 @@ export const useStore = create<AppState>()(
           timestamp: new Date(),
         };
 
-        // Deduct inventory
+        // Deduct inventory (can go negative if forced)
         const updatedMaterials = [...materials];
         for (const cartItem of cart) {
           for (const ingredient of cartItem.menuItem.recipe) {
             const mat = updatedMaterials.find(m => m.id === ingredient.materialId);
             if (mat) {
-              mat.currentStock = Math.max(0, mat.currentStock - ingredient.quantity * cartItem.quantity);
+              mat.currentStock = mat.currentStock - ingredient.quantity * cartItem.quantity;
             }
           }
         }
